@@ -66,6 +66,7 @@ struct TweenData
 public:
 	TweenData(int tID)
 		:tweenID(tID),
+		initialValue(nullptr),
 		reversed(false),
 		easing(Linear)
 	{}
@@ -78,7 +79,7 @@ public:
 
 	int tweenID;
 	bool fromReady;
-	bool byReference;
+	bool byPointer;
 	bool reversed;
 	T* initialValue;
 	T initialCpy;
@@ -104,8 +105,13 @@ public:
 	
 	// Creates a Tween starting from the initial value given
 	// Also sets the value each frame to the variable it points to
+	// *Only use when the object pointing to is guaranteed to be alive
 	// *Must-to-call
 	STween& From(T* initVal);
+	// Creates a Tween starting from the initial value given
+	// A setter callback for the value needs to be set with OnStep()
+	// *Must-to-call
+	STween& From(T initVal);
 	// Sets the desired final value
 	// *Must-to-call
 	STween& To(T finalVal);
@@ -184,17 +190,35 @@ template<class T> void STween<T>::ReleaseTweens()
 
 template<class T>STween<T>& STween<T>::From(T* initVal)
 {
-	TweenData<T> STween(m_lastTweenIndex);
+	TweenData<T> tween(m_lastTweenIndex, initVal);
+	tween.fromReady = true;
+	tween.byPointer = true;
+	tween.initialValue = initVal;
+	tween.initialCpy = *initVal;
+	tween.duration = 0;
+	tween.timeCounter = 0;
+	tween.endTween = std::vector<TweenData<T>>();
 
-	STween.fromReady = true;
-	STween.byReference = true;
-	STween.initialValue = initVal;
-	STween.initialCpy = *initVal;
-	STween.duration = 0;
-	STween.timeCounter = 0;
-	STween.endTween = std::vector<TweenData<T>>();
+	m_tweenVec.push_back(tween);
 
-	m_tweenVec.push_back(STween);
+	m_lastTweenIndex++;
+
+	return *this;
+}
+
+template<class T>STween<T>& STween<T>::From(T initVal)
+{
+	TweenData<T> tween(m_lastTweenIndex);
+
+	tween.fromReady = true;
+	tween.byPointer = false;
+	tween.initialValue = nullptr;
+	tween.initialCpy = initVal;
+	tween.duration = 0;
+	tween.timeCounter = 0;
+	tween.endTween = std::vector<TweenData<T>>();
+
+	m_tweenVec.push_back(tween);
 
 	m_lastTweenIndex++;
 
@@ -219,28 +243,28 @@ template<class T> void STween<T>::Update(float deltaTime)
 {
 	std::vector<TweenData<T>> tweensToAdd;
 	std::vector<int> tweensToDelete;
-
+	
 	int counter = 0;
-	for (auto &STween : m_tweenVec)
+	for (auto &tween : m_tweenVec)
 	{
-		if (STween.fromReady)
+		if (tween.fromReady)
 		{
-			float timePos = STween.timeCounter / STween.duration;
+			float timePos = tween.timeCounter / tween.duration;
 
 			T value, start, end;
 
-			if (STween.reversed)
+			if (tween.reversed)
 			{
-				start = STween.finalValue;
-				end = STween.initialCpy;
+				start = tween.finalValue;
+				end = tween.initialCpy;
 			}
 			else
 			{
-				start = STween.initialCpy;
-				end = STween.finalValue;
+				start = tween.initialCpy;
+				end = tween.finalValue;
 			}
 
-			switch (STween.easing)
+			switch (tween.easing)
 			{
 			case EasingFunction::Linear:
 				value = Linear(timePos, start, end);
@@ -298,42 +322,55 @@ template<class T> void STween<T>::Update(float deltaTime)
 				break;
 			}
 
-			*STween.initialValue = value;
-			if (STween.stepCallback)
+			if (tween.byPointer)
 			{
-				STween.stepCallback(value);
+				*tween.initialValue = value;
 			}
-
-			if (STween.timeCounter >= STween.duration)
+				
+			if (tween.stepCallback)
 			{
-				if (STween.reversed)
-					*STween.initialValue = STween.initialCpy;
-				else
-					*STween.initialValue = STween.finalValue;
-
-				STween.fromReady = false;
-				if (STween.finishCallback)
+				tween.stepCallback(value);
+			}
+			tween.tweenID = counter;
+			if (tween.timeCounter >= tween.duration)
+			{
+				if (tween.byPointer)
 				{
-					STween.finishCallback();
+					*tween.initialValue = tween.reversed ? tween.initialCpy : tween.finalValue;
 				}
 
-				for (auto &callbackTw : STween.endTween)
+				tween.fromReady = false;
+
+				tweensToDelete.push_back(counter);
+
+				if (tween.finishCallback)
+				{
+					tween.finishCallback();
+				}
+
+				for (auto &callbackTw : tween.endTween)
 				{
 					auto endTween = callbackTw;
 					tweensToAdd.push_back(endTween);
 				}
-
-				tweensToDelete.push_back(counter);
 			}
 
-			STween.timeCounter += deltaTime;
+			tween.timeCounter += deltaTime;
 		}
+		//fromReady == false (left overs)
+		else
+		{
+			tweensToDelete.push_back(counter);
+		}
+
 		counter++;
 	}
 
-	for (auto oldTween : tweensToDelete)
+	for (auto it = tweensToDelete.rbegin(); it != tweensToDelete.rend(); ++it)
 	{
-		m_tweenVec.erase(m_tweenVec.begin() + oldTween);
+		auto oldIt = m_tweenVec.begin() + *it;
+		*oldIt = std::move(m_tweenVec.back());
+		m_tweenVec.pop_back();
 		m_lastTweenIndex--;
 	}
 
