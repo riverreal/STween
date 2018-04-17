@@ -30,7 +30,6 @@ SOFTWARE.
 
 //These can easily be replaced with custom libraries instead of STL
 #include <vector> //std::vector
-#include <algorithm> //std::find
 #include <functional> //std::function
 
 namespace STween
@@ -219,8 +218,9 @@ template<class T>STween<T>& STween<T>::Time(float sec)
 template<class T> void STween<T>::Update(float deltaTime)
 {
 	std::vector<TweenData<T>> tweensToAdd;
-	std::vector<TweenData<T>> tweensToDelete;
+	std::vector<int> tweensToDelete;
 
+	int counter = 0;
 	for (auto &STween : m_tweenVec)
 	{
 		if (STween.fromReady)
@@ -323,21 +323,18 @@ template<class T> void STween<T>::Update(float deltaTime)
 					tweensToAdd.push_back(endTween);
 				}
 
-				tweensToDelete.push_back(STween);
+				tweensToDelete.push_back(counter);
 			}
 
 			STween.timeCounter += deltaTime;
 		}
+		counter++;
 	}
 
-	for (TweenData<T> &oldTween : tweensToDelete)
+	for (auto oldTween : tweensToDelete)
 	{
-		auto position = std::find(m_tweenVec.begin(), m_tweenVec.end(), oldTween);
-		if (position != m_tweenVec.end())
-		{
-			m_tweenVec.erase(position);
-			m_lastTweenIndex--;
-		}
+		m_tweenVec.erase(m_tweenVec.begin() + oldTween);
+		m_lastTweenIndex--;
 	}
 
 	for (auto &newTween : tweensToAdd)
