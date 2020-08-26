@@ -190,7 +190,7 @@ template<class T> void STween<T>::ReleaseTweens()
 
 template<class T>STween<T>& STween<T>::From(T* initVal)
 {
-	TweenData<T> tween(m_lastTweenIndex, initVal);
+	TweenData<T> tween(m_lastTweenIndex);
 	tween.fromReady = true;
 	tween.byPointer = true;
 	tween.initialValue = initVal;
